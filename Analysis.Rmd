@@ -1,0 +1,234 @@
+---
+title: "STA303-Project-Part-2"
+author: "Amrinder Sehmbi"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Imported Libraries
+```{r, eval=TRUE, echo = T}
+#oo <- options(repos = "https://cran.r-project.org/")
+#install.packages("Matrix")
+#install.packages("lme4")
+#options(oo)
+
+
+library(ggplot2)
+library(knitr)
+library(vcd)
+library(lme4) 
+library(influence.ME)
+library(pROC)
+library(lattice)
+library(mlmhelpr)
+```
+
+
+# Load the data set in R
+```{r, eval=TRUE, echo = T}
+# Open CSV file with data
+FullData <- read.csv("~/STA303/shotdetail_2022.csv")
+
+# Remove ID columns
+RemovedColumns <- FullData[, -c(which(names(FullData) %in% 
+                                        c('GRID_TYPE', 'GAME_ID', 
+                                          'GAME_EVENT_ID', 'PLAYER_ID',
+                                          'TEAM_ID')))]
+# Filter for Denver Nuggets Data
+DenverNuggetsData <-subset(RemovedColumns, TEAM_NAME == "Denver Nuggets")
+
+# Add column indicating if shot taken at home or away
+DenverNuggetsData$HOME_AWAY <- ifelse(DenverNuggetsData$HTM == "DEN", "Home", 
+                                      "Away")
+
+```
+
+
+
+# Data Summary
+```{r, eval=TRUE, echo = T}
+# Summary of Data
+summary(DenverNuggetsData)
+
+# Visual 1: Distribution of EVENT_TYPE
+barplot(table(DenverNuggetsData$EVENT_TYPE), 
+        main = "Shots Made vs Missed",
+        xlab = "Shot Result",
+        ylab = "Frequency",
+        col = c("coral2", "cadetblue2"))
+
+# Visual 2: Shot Zone vs Shot Outcome
+barplot(table(DenverNuggetsData$EVENT_TYPE, DenverNuggetsData$SHOT_ZONE_BASIC), 
+        beside = TRUE, 
+        legend.text = c("Made", "Missed"),
+        main = "Shot Outcome vs Shot Zone",
+        xlab = "Shot Zone",
+        ylab = "Count",
+        col = c("coral2", "cadetblue2"),
+        cex.axis = 1.5)
+
+# Visual 3: Shots Made by Shot Type and Player Shooting
+ShotsMadeData = subset(DenverNuggetsData, EVENT_TYPE == "Made Shot")
+desired_categories <- c("Aaron Gordon", "Jamal Murray", "Nikola Jokic")
+ShotsMadeData = subset(ShotsMadeData, PLAYER_NAME %in% desired_categories)
+desired_categories <- c("Dunk Shot", "Jump Shot", "Layup Shot")
+ShotsMadeData = subset(ShotsMadeData, ACTION_TYPE %in% desired_categories)
+
+mosaicplot(table(ShotsMadeData$PLAYER_NAME, ShotsMadeData$ACTION_TYPE),
+           main = "Shot Made by Player and Action Type",
+           xlab = "Player",
+           ylab = "Action Type",
+           color = TRUE,
+           las = 1,
+           cex.axis = 1)  
+
+```
+
+
+# Model Fitting
+
+## Model 1: Initial Model with all Variables
+```{r, eval=TRUE, echo = T}
+# Model 1: Initial Model with all Variables
+model1 <- glmer(SHOT_MADE_FLAG ~ SHOT_ZONE_BASIC + SHOT_DISTANCE 
+                + MINUTES_REMAINING + factor(HOME_AWAY) + factor(PERIOD) 
+                + (1|ACTION_TYPE)+(1|ACTION_TYPE:PLAYER_NAME), 
+                family = "binomial", data = DenverNuggetsData,
+                control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+summary(model1)
+mlmhelpr::icc(model1)
+auc(roc(DenverNuggetsData$SHOT_MADE_FLAG, predict(model1, type = "response")))
+
+
+```
+
+
+## Model 2: Excluding MINUTES_REMAINING
+```{r, eval=TRUE, echo = T}
+
+# Model 2: Excluding MINUTES_REMAINING
+model2 <- glmer(SHOT_MADE_FLAG ~ SHOT_ZONE_BASIC + SHOT_DISTANCE 
+                + factor(HOME_AWAY) + factor(PERIOD) 
+                + (1|ACTION_TYPE)+(1|ACTION_TYPE:PLAYER_NAME), 
+                family = "binomial", data = DenverNuggetsData,
+                control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+
+
+
+summary(model2)
+mlmhelpr::icc(model2)
+auc(roc(DenverNuggetsData$SHOT_MADE_FLAG, predict(model2, type = "response")))
+```
+
+## Model 3: Excluding MINUTES_REMAINING, HOME_AWAY
+```{r, eval=TRUE, echo = T}
+# Model 3: Excluding MINUTES_REMAINING, HOME_AWAY
+model3 <- glmer(SHOT_MADE_FLAG ~ SHOT_ZONE_BASIC + SHOT_DISTANCE + factor(PERIOD) 
+                + (1|ACTION_TYPE)+(1|ACTION_TYPE:PLAYER_NAME), 
+                family = "binomial", data = DenverNuggetsData,
+                control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+
+
+
+summary(model3)
+mlmhelpr::icc(model3)
+auc(roc(DenverNuggetsData$SHOT_MADE_FLAG, predict(model3, type = "response")))
+```
+
+
+## Model 4: Excluding MINUTES_REMAINING, HOME_AWAY, SHOT_DISTANCE
+```{r, eval=TRUE, echo = T}
+# Model 4: Excluding MINUTES_REMAINING, HOME_AWAY, SHOT_DISTANCE
+model4 <- glmer(SHOT_MADE_FLAG ~ SHOT_ZONE_BASIC  + factor(PERIOD) 
+                + (1|ACTION_TYPE)+(1|ACTION_TYPE:PLAYER_NAME), 
+                family = "binomial", data = DenverNuggetsData,
+                control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+
+
+
+summary(model4)
+mlmhelpr::icc(model4)
+auc(roc(DenverNuggetsData$SHOT_MADE_FLAG, predict(model4, type = "response")))
+```
+
+
+## Model 5: Final Model excluding MINUTES_REMAINING, HOME_AWAY, SHOT_DISTANCE, PERIOD
+```{r, eval=TRUE, echo = T}
+# Model 5: Final Model
+final.model <- glmer(SHOT_MADE_FLAG ~ SHOT_ZONE_BASIC 
+                + (1|ACTION_TYPE)+(1|ACTION_TYPE:PLAYER_NAME), 
+                family = "binomial", data = DenverNuggetsData,
+                control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+
+
+
+summary(final.model)
+mlmhelpr::icc(final.model)
+auc(roc(DenverNuggetsData$SHOT_MADE_FLAG, predict(final.model, type = "response")))
+
+```
+
+
+# Model Diagnostics
+
+## Dfbetas
+```{r, eval=TRUE, echo = T,fig.height=10}
+
+infl <- influence(final.model,"ACTION_TYPE")
+
+plot(infl,which="dfbetas",parameters=c(1),xlab="DFbetaS",ylab="Action Type")
+plot(infl,which="dfbetas",parameters=c(2),xlab="DFbetaS",ylab="Action Type")
+plot(infl,which="dfbetas",parameters=c(3),xlab="DFbetaS",ylab="Action Type")
+plot(infl,which="dfbetas",parameters=c(4),xlab="DFbetaS",ylab="Action Type")
+plot(infl,which="dfbetas",parameters=c(5),xlab="DFbetaS",ylab="Action Type")
+plot(infl,which="dfbetas",parameters=c(6),xlab="DFbetaS",ylab="Action Type")
+plot(infl,which="dfbetas",parameters=c(7),xlab="DFbetaS",ylab="Action Type")
+
+```
+
+
+## Cooks Distance
+```{r, eval=TRUE, echo = T,fig.height=8}
+
+plot(infl, which="cook", cutoff=4/nrow(ranef(final.model)$ACTION_TYPE), sort=TRUE, xlab="Cook´s Distance",ylab="Action type")
+```
+
+## Removing Outliers for ACTION_TYPE
+```{r, eval=TRUE, echo = T}
+# removing influential groups from data
+remove_categories <- c("Jump Shot", "Running Jump Shot")
+sub = subset(DenverNuggetsData, !(ACTION_TYPE %in% remove_categories))
+
+# fit final model without influential observations
+final.model.removed.outliers <- glmer(SHOT_MADE_FLAG ~ SHOT_ZONE_BASIC 
+                + (1|ACTION_TYPE)+(1|ACTION_TYPE:PLAYER_NAME), 
+                family = "binomial", data = sub,
+                control=glmerControl(optimizer="bobyqa",optCtrl=list(maxfun=2e5)))
+
+summary(final.model.removed.outliers)
+mlmhelpr::icc(final.model.removed.outliers)
+auc(roc(sub$SHOT_MADE_FLAG,  predict(final.model.removed.outliers, type = "response")))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
